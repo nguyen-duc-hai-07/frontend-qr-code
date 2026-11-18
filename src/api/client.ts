@@ -88,13 +88,38 @@ apiClient.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('user_info');
-        if (window.location.pathname.startsWith('/admin')) {
-          window.location.href = '/login';
-        }
+        window.location.href = '/login';
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
       }
+    }
+
+    // Chuẩn hóa thông báo lỗi 100% Tiếng Việt cho Axios Error
+    const status = error.response?.status;
+    let viMessage = '';
+    if (status === 401) {
+      viMessage = 'Tên đăng nhập hoặc mật khẩu không chính xác!';
+    } else if (status === 403) {
+      viMessage = 'Bạn không có quyền thực hiện thao tác này!';
+    } else if (status === 404) {
+      viMessage = 'Đường dẫn hoặc dữ liệu không tồn tại!';
+    } else if (status === 409) {
+      viMessage = 'Dữ liệu này đã tồn tại trong hệ thống!';
+    } else if (status && status >= 500) {
+      viMessage = 'Hệ thống máy chủ đang gặp sự cố, vui lòng thử lại sau ít phút!';
+    }
+
+    const data = error.response?.data as Record<string, unknown> | undefined;
+    if (viMessage) {
+      if (!data?.message || typeof data.message !== 'string' || data.message.includes('status code')) {
+        if (data && typeof data === 'object') {
+          data.message = viMessage;
+        }
+      }
+      error.message = (typeof data?.message === 'string' && data.message) ? data.message : viMessage;
+    } else if (data?.message && typeof data.message === 'string') {
+      error.message = data.message;
     }
 
     return Promise.reject(error);

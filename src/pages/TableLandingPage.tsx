@@ -15,12 +15,15 @@ import {
   Receipt,
   Trash2,
   ArrowRight,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { tableApi } from '@/api/table.api';
 import { orderApi } from '@/api/order.api';
 import { TableLanding } from '@/types/table';
 import { Product, ProductTopping } from '@/types/product';
 import { Order } from '@/types/order';
+import { Footer } from '@/components/Footer';
 import { useCart } from '@/contexts/CartContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -39,6 +42,22 @@ export const TableLandingPage: React.FC = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isOrdersHistoryOpen, setIsOrdersHistoryOpen] = useState(false);
+
+  // View Mode: 'grid' (dạng lưới) or 'list' (dạng danh sách)
+  const [menuView, setMenuView] = useState<'grid' | 'list'>(() => {
+    try {
+      return (localStorage.getItem('hoangan_menu_view') as 'grid' | 'list') || 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
+
+  const handleViewChange = (view: 'grid' | 'list') => {
+    setMenuView(view);
+    try {
+      localStorage.setItem('hoangan_menu_view', view);
+    } catch {}
+  };
 
   // Guest order inputs
   const [customerName, setCustomerName] = useState('');
@@ -99,10 +118,28 @@ export const TableLandingPage: React.FC = () => {
   const { showToast, showAlertModal } = useToast();
 
   const categoryRefs = useRef<Record<number, HTMLElement | null>>({});
+  const headerRef = useRef<HTMLElement | null>(null);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const [headerH, setHeaderH] = useState(108);
+
+  // Measure dynamic sticky header height
+  useEffect(() => {
+    const measure = () => {
+      if (headerRef.current) {
+        setHeaderH(headerRef.current.offsetHeight);
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [landing]);
 
   // 1. Fetch table landing data
   useEffect(() => {
     if (!activeToken) return;
+
+    // Lưu lại URL bàn hiện tại để khi xem tiến độ đơn / đơn hàng quay về đúng bàn này
+    localStorage.setItem('hoangan_last_table_path', window.location.pathname);
 
     setLoading(true);
     tableApi
@@ -194,13 +231,24 @@ export const TableLandingPage: React.FC = () => {
     }
   };
 
-  // Scroll to category
+  // Scroll to category smoothly with exact offset so section title and products are never hidden
   const scrollToCategory = (catId: number) => {
     setSelectedCategoryId(catId);
     const targetElement = categoryRefs.current[catId];
-    if (targetElement) {
-      targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (!targetElement) return;
+
+    const headerHeight = headerRef.current ? headerRef.current.offsetHeight : headerH;
+    const asideHeight = asideRef.current ? asideRef.current.offsetHeight : 0;
+    const isMobile = window.innerWidth < 768;
+    // On mobile, both header and category pills are sticky at top
+    // On desktop, category navigation is a sidebar on the left, so only header is sticky
+    const totalOffset = isMobile ? (headerHeight + asideHeight + 12) : (headerHeight + 20);
+
+    const elementTop = targetElement.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({
+      top: Math.max(0, elementTop - totalOffset),
+      behavior: 'smooth',
+    });
   };
 
   // Group products by category
@@ -236,6 +284,32 @@ export const TableLandingPage: React.FC = () => {
     return grouped;
   }, [landing, searchKeyword]);
 
+  // Sync active category pill when scrolling
+  useEffect(() => {
+    if (groupedProducts.length === 0) return;
+
+    const handleScroll = () => {
+      const headerHeight = headerRef.current ? headerRef.current.offsetHeight : 108;
+      const asideHeight = asideRef.current ? asideRef.current.offsetHeight : 0;
+      const isMobile = window.innerWidth < 768;
+      const topOffset = isMobile ? (headerHeight + asideHeight + 40) : (headerHeight + 50);
+
+      for (const group of groupedProducts) {
+        const el = categoryRefs.current[group.category.id];
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= topOffset && rect.bottom > topOffset) {
+            setSelectedCategoryId(group.category.id);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [groupedProducts]);
+
   // Handle Order Submit
   const handleConfirmOrder = async () => {
     if (!landing?.table?.id || items.length === 0) return;
@@ -260,6 +334,7 @@ export const TableLandingPage: React.FC = () => {
       }
 
       setLastCreatedOrder(res.data);
+      playOrderNotificationSound();
       clearCart();
       setIsDrawerOpen(false);
       setCustomerName('');
@@ -343,6 +418,12 @@ export const TableLandingPage: React.FC = () => {
     }
   };
 
+  const tableDisplayName = landing?.table
+    ? (landing.table.zone?.trim()
+        ? `${landing.table.location_name} - ${landing.table.zone.trim()}`
+        : landing.table.location_name)
+    : '';
+
   // Handle "Gọi nhân viên" (Call Staff)
   const handleCallStaff = () => {
     if (!landing?.table) return;
@@ -352,9 +433,8 @@ export const TableLandingPage: React.FC = () => {
       tableName: landing.table.location_name,
       zone: landing.table.zone,
       tableId: landing.table.id,
-      message: `${landing.table.location_name} (${landing.table.zone}) đang gọi nhân viên!`,
+      message: `${tableDisplayName} đang gọi nhân viên!`,
     });
-    playOrderNotificationSound();
     setCallStaffSuccess(true);
     setTimeout(() => {
       setIsCallingStaff(false);
@@ -395,12 +475,10 @@ export const TableLandingPage: React.FC = () => {
     );
   }
 
-  const tableDisplayName = landing.table.location_name;
-
   return (
     <div className="min-h-screen bg-[#faf7f2] text-stone-900 pb-28 md:pb-24 font-sans">
       {/* 1. Header (Sticky Top Bar - Phù hợp cả Mobile và Desktop) */}
-      <header className="sticky top-0 z-20 border-b border-[#ebdcd0] bg-[#fffdfa]/95 backdrop-blur px-4 py-3 md:px-6 shadow-2xs">
+      <header ref={headerRef} className="sticky top-0 z-20 border-b border-[#ebdcd0] bg-[#fffdfa]/95 backdrop-blur px-4 py-3 md:px-6 shadow-2xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
           {/* Brand & Subtitle */}
           <div className="min-w-0">
@@ -453,9 +531,9 @@ export const TableLandingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="max-w-7xl mx-auto mt-2.5">
-          <div className="relative">
+        {/* Search Bar & View Mode Toggle */}
+        <div className="max-w-7xl mx-auto mt-2.5 flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -473,14 +551,53 @@ export const TableLandingPage: React.FC = () => {
               </button>
             )}
           </div>
+
+          <div
+            role="group"
+            aria-label="Kiểu hiển thị thực đơn"
+            className="inline-flex shrink-0 gap-1 rounded-xl border border-[#e8ded2] bg-[#fcf9f5] p-1 shadow-2xs"
+          >
+            <button
+              type="button"
+              onClick={() => handleViewChange('grid')}
+              className={`flex h-8.5 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-xs font-bold transition-all active:scale-95 ${
+                menuView === 'grid'
+                  ? 'bg-amber-700 text-white shadow-2xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-[#f5ede4]'
+              }`}
+              title="Dạng lưới"
+              aria-pressed={menuView === 'grid'}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Dạng lưới</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewChange('list')}
+              className={`flex h-8.5 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-xs font-bold transition-all active:scale-95 ${
+                menuView === 'list'
+                  ? 'bg-amber-700 text-white shadow-2xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-[#f5ede4]'
+              }`}
+              title="Dạng danh sách"
+              aria-pressed={menuView === 'list'}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Dạng danh sách</span>
+            </button>
+          </div>
         </div>
       </header>
 
       {/* 2. Responsive Content Layout (Pill Navigation + Product Grid) */}
       <div className="px-3 pb-3 md:mx-auto md:grid md:max-w-7xl md:grid-cols-[200px_minmax(0,1fr)] md:gap-6 md:px-6 md:pt-5">
-        {/* Category Navigation (Horizontal scroll on mobile, Vertical sidebar on desktop) */}
-        <aside className="sticky top-[108px] z-10 -mx-3 mb-4 border-b border-[#ede4d8] bg-[#fffdfa]/95 px-3 py-2 backdrop-blur md:top-24 md:mx-0 md:mb-0 md:self-start md:rounded-2xl md:border md:border-[#ede4d8] md:p-3 md:shadow-2xs">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar md:flex-col md:overflow-visible">
+        {/* Category Navigation (Tự động xuống dòng trên mobile để khách thấy toàn bộ danh mục không phải lướt, Vertical sidebar trên desktop) */}
+        <aside
+          ref={asideRef}
+          style={{ top: headerH ? `${headerH}px` : undefined }}
+          className="sticky z-10 -mx-3 mb-4 border-b border-[#ede4d8] bg-[#fffdfa]/95 px-3 py-2.5 backdrop-blur md:!top-24 md:mx-0 md:mb-0 md:self-start md:rounded-2xl md:border md:border-[#ede4d8] md:p-3 md:shadow-2xs"
+        >
+          <div className="flex flex-wrap gap-2 md:flex-col md:overflow-visible">
             {landing.categories.map((cat) => {
               const isSelected = selectedCategoryId === cat.id;
               return (
@@ -488,7 +605,7 @@ export const TableLandingPage: React.FC = () => {
                   key={cat.id}
                   type="button"
                   onClick={() => scrollToCategory(cat.id)}
-                  className={`shrink-0 rounded-full px-4 py-2 text-xs md:text-sm font-bold transition-all md:w-full md:rounded-xl md:text-left ${
+                  className={`rounded-full px-3.5 py-1.5 md:py-2 text-xs md:text-sm font-bold transition-all md:w-full md:rounded-xl md:text-left ${
                     isSelected
                       ? 'bg-amber-700 text-white shadow-xs'
                       : 'border border-[#e8ded2] bg-[#f5ede4] text-stone-700 hover:bg-[#ede1d3]'
@@ -505,168 +622,314 @@ export const TableLandingPage: React.FC = () => {
         <div className="min-w-0 space-y-6">
           {groupedProducts.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-400 shadow-sm">
-              <Utensils className="w-12 h-12 mx-auto mb-3 opacity-30 text-blue-600" />
-              <p className="font-semibold text-slate-600">Không tìm thấy món ăn nào phù hợp</p>
-              <p className="text-xs text-slate-400 mt-1">Vui lòng thử tìm với từ khóa khác</p>
+              <Utensils className="w-12 h-12 mx-auto mb-3 opacity-30 text-amber-700" />
+              <p className="font-semibold text-stone-600">Không tìm thấy món ăn nào phù hợp</p>
+              <p className="text-xs text-stone-400 mt-1">Vui lòng thử tìm với từ khóa khác</p>
             </div>
           ) : (
             groupedProducts.map(({ category, products }) => (
               <section
                 key={category.id}
+                data-cat-id={category.id}
                 ref={(el) => {
                   categoryRefs.current[category.id] = el;
                 }}
-                className="scroll-mt-32"
+                className="scroll-mt-64 md:scroll-mt-28"
               >
                 {/* Section Header */}
-                <div className="mb-3 flex items-end justify-between border-b border-slate-200 pb-2">
-                  <h2 className="text-base md:text-lg font-bold text-slate-950">
+                <div className="mb-3 flex items-end justify-between border-b border-[#ede4d8] pb-2">
+                  <h2 className="text-base md:text-lg font-bold text-stone-900">
                     {category.name}
                   </h2>
-                  <span className="text-xs font-semibold text-slate-500">
+                  <span className="text-xs font-semibold text-stone-500">
                     {products.length} món
                   </span>
                 </div>
 
-                {/* Products Grid */}
-                <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
-                  {products.map((product) => {
-                    const qty = getItemQuantity(product.id);
-                    const isOutOfStock = !product.is_available;
+                {/* Products Display (Grid or List) */}
+                {menuView === 'grid' ? (
+                  <div className="grid gap-3.5 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+                    {products.map((product) => {
+                      const qty = getItemQuantity(product.id);
+                      const isOutOfStock = !product.is_available;
+                      const hasToppings = Boolean(product.toppings && product.toppings.length > 0);
 
-                    return (
-                      <div
-                        key={product.id}
-                        className={`flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md ${
-                          isOutOfStock ? 'opacity-60 bg-slate-50' : ''
-                        }`}
-                      >
-                        {/* Thumbnail */}
+                      return (
                         <div
-                          onClick={() => !isOutOfStock && handleProductAddClick(product)}
-                          className={`h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100 relative border border-slate-100 ${
-                            !isOutOfStock ? 'cursor-pointer' : ''
+                          key={product.id}
+                          className={`flex gap-3 rounded-2xl border border-[#ede4d8] bg-white p-3 shadow-2xs transition-all hover:shadow-md hover:border-amber-300 ${
+                            isOutOfStock ? 'opacity-60 bg-stone-50' : ''
                           }`}
                         >
-                          {product.image_url ? (
-                            <img
-                              src={product.image_url}
-                              alt={product.name}
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                                const fallback = e.currentTarget.parentElement?.querySelector('.img-fallback');
-                                if (fallback) fallback.classList.remove('hidden');
-                              }}
-                              className={`h-full w-full object-cover ${
-                                isOutOfStock ? 'grayscale contrast-75' : ''
-                              }`}
-                            />
-                          ) : null}
-                          <div
-                            className={`img-fallback flex h-full items-center justify-center text-slate-300 ${
-                              product.image_url ? 'hidden' : ''
-                            }`}
-                          >
-                            <Utensils className="w-8 h-8" />
-                          </div>
-                          {isOutOfStock && (
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                              <span className="text-[10px] font-bold text-white bg-rose-600 px-2 py-0.5 rounded shadow">
-                                Đã hết
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex min-w-0 flex-1 flex-col justify-between">
+                          {/* Thumbnail */}
                           <div
                             onClick={() => !isOutOfStock && handleProductAddClick(product)}
-                            className={!isOutOfStock ? 'cursor-pointer' : ''}
+                            className={`h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-[#faf6f0] relative border border-[#f0e6da] ${
+                              !isOutOfStock ? 'cursor-pointer' : ''
+                            }`}
                           >
-                            <div className="line-clamp-2 text-[15px] font-bold leading-snug text-slate-950">
-                              {product.name}
+                            {product.image_url ? (
+                              <img
+                                src={product.image_url}
+                                alt={product.name}
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fallback = e.currentTarget.parentElement?.querySelector('.img-fallback');
+                                  if (fallback) fallback.classList.remove('hidden');
+                                }}
+                                className={`h-full w-full object-cover ${
+                                  isOutOfStock ? 'grayscale contrast-75' : ''
+                                }`}
+                              />
+                            ) : null}
+                            <div
+                              className={`img-fallback flex h-full items-center justify-center text-amber-700/50 ${
+                                product.image_url ? 'hidden' : ''
+                              }`}
+                            >
+                              <Utensils className="w-8 h-8" />
                             </div>
-                            {product.toppings && product.toppings.length > 0 && (
-                              <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 mt-1">
-                                ✨ Có {product.toppings.length} topping tùy chọn
-                              </span>
-                            )}
-                            {product.description && (
-                              <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
-                                {product.description}
-                              </p>
-                            )}
-                            {isOutOfStock ? (
-                              <div className="mt-1 text-xs font-bold text-rose-600">Đã hết</div>
-                            ) : (
-                              <div className="mt-1 text-sm font-extrabold text-amber-800">
-                                {formatCurrency(product.price)}
+                            {isOutOfStock && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <span className="text-[10px] font-bold text-white bg-rose-600 px-2 py-0.5 rounded shadow">
+                                  Đã hết
+                                </span>
                               </div>
                             )}
                           </div>
 
-                          {/* Action Button / Stepper */}
-                          <div className="mt-2.5">
-                            {isOutOfStock ? (
-                              <button
-                                disabled
-                                className="w-full py-1.5 bg-stone-100 text-stone-400 text-xs font-semibold rounded-xl cursor-not-allowed text-center"
-                              >
-                                Tạm hết
-                              </button>
-                            ) : product.toppings && product.toppings.length > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => handleProductAddClick(product)}
-                                className="w-full py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition active:scale-95 text-center flex items-center justify-center space-x-1"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Tùy chọn</span>
-                                {qty > 0 && (
-                                   <span className="ml-1 bg-white/20 px-1.5 py-0.2 rounded-full text-[10px]">
-                                    ({qty})
-                                  </span>
-                                )}
-                              </button>
-                            ) : qty > 0 ? (
-                              <div className="flex items-center justify-between rounded-xl border border-amber-200/90 bg-amber-50/80 px-2 py-1">
+                          {/* Content */}
+                          <div className="flex min-w-0 flex-1 flex-col justify-between">
+                            <div
+                              onClick={() => !isOutOfStock && handleProductAddClick(product)}
+                              className={!isOutOfStock ? 'cursor-pointer' : ''}
+                            >
+                              <div className="line-clamp-2 text-[15px] font-bold leading-snug text-stone-900">
+                                {product.name}
+                              </div>
+                              {hasToppings && (
+                                <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 mt-1">
+                                  ✨ Có {product.toppings!.length} topping tùy chọn
+                                </span>
+                              )}
+                              {product.description && (
+                                <p className="mt-0.5 line-clamp-1 text-xs text-stone-500">
+                                  {product.description}
+                                </p>
+                              )}
+                              {isOutOfStock ? (
+                                <div className="mt-1 text-xs font-bold text-rose-600">Đã hết</div>
+                              ) : (
+                                <div className="mt-1 text-sm font-extrabold text-amber-800">
+                                  {formatCurrency(product.price)}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Button / Stepper */}
+                            <div className="mt-2.5">
+                              {isOutOfStock ? (
                                 <button
-                                  type="button"
-                                  onClick={() => updateQuantity(product.id, qty - 1)}
-                                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-amber-900 shadow-2xs hover:bg-stone-50 active:scale-95 transition"
+                                  disabled
+                                  className="w-full py-1.5 bg-stone-100 text-stone-400 text-xs font-semibold rounded-xl cursor-not-allowed text-center border border-stone-200"
                                 >
-                                  <Minus className="w-3.5 h-3.5" />
+                                  Tạm hết
                                 </button>
-                                <span className="text-xs font-bold text-amber-900 px-2">{qty}</span>
+                              ) : hasToppings ? (
                                 <button
                                   type="button"
-                                  onClick={() => updateQuantity(product.id, qty + 1)}
-                                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-600 text-white shadow-2xs hover:bg-amber-700 active:scale-95 transition"
+                                  onClick={() => handleProductAddClick(product)}
+                                  className="w-full py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition active:scale-95 text-center flex items-center justify-center space-x-1"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
+                                  <span>Tùy chọn</span>
+                                  {qty > 0 && (
+                                    <span className="ml-1 bg-white/20 px-1.5 py-0.2 rounded-full text-[10px]">
+                                      ({qty})
+                                    </span>
+                                  )}
                                 </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleProductAddClick(product)}
-                                className="w-full py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition active:scale-95 text-center"
-                              >
-                                Thêm
-                              </button>
-                            )}
+                              ) : qty > 0 ? (
+                                <div className="flex items-center justify-between rounded-xl border border-amber-200/90 bg-amber-50/80 px-2 py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(product.id, qty - 1)}
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-amber-900 shadow-2xs hover:bg-stone-50 active:scale-95 transition"
+                                  >
+                                    <Minus className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span className="text-xs font-bold text-amber-900 px-2">{qty}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(product.id, qty + 1)}
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-600 text-white shadow-2xs hover:bg-amber-700 active:scale-95 transition"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleProductAddClick(product)}
+                                  className="w-full py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition active:scale-95 text-center flex items-center justify-center space-x-1"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Thêm</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid gap-2.5 grid-cols-1 md:grid-cols-2">
+                    {products.map((product) => {
+                      const qty = getItemQuantity(product.id);
+                      const isOutOfStock = !product.is_available;
+                      const hasToppings = Boolean(product.toppings && product.toppings.length > 0);
+
+                      return (
+                        <div
+                          key={product.id}
+                          className={`flex gap-3 rounded-2xl border border-[#ede4d8] bg-white p-3 shadow-2xs transition-all hover:shadow-md hover:border-amber-300 items-center ${
+                            isOutOfStock ? 'opacity-60 bg-stone-50' : ''
+                          }`}
+                        >
+                          {/* Thumbnail */}
+                          <div
+                            onClick={() => !isOutOfStock && handleProductAddClick(product)}
+                            className={`h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-[#faf6f0] relative border border-[#f0e6da] ${
+                              !isOutOfStock ? 'cursor-pointer' : ''
+                            }`}
+                          >
+                            {product.image_url ? (
+                              <img
+                                src={product.image_url}
+                                alt={product.name}
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fallback = e.currentTarget.parentElement?.querySelector('.img-fallback');
+                                  if (fallback) fallback.classList.remove('hidden');
+                                }}
+                                className={`h-full w-full object-cover ${
+                                  isOutOfStock ? 'grayscale contrast-75' : ''
+                                }`}
+                              />
+                            ) : null}
+                            <div
+                              className={`img-fallback flex h-full items-center justify-center text-amber-700/50 ${
+                                product.image_url ? 'hidden' : ''
+                              }`}
+                            >
+                              <Utensils className="w-7 h-7" />
+                            </div>
+                            {isOutOfStock && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <span className="text-[10px] font-bold text-white bg-rose-600 px-1.5 py-0.5 rounded shadow">
+                                  Hết
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Content */}
+                          <div className="flex min-w-0 flex-1 flex-col justify-between">
+                            <div
+                              onClick={() => !isOutOfStock && handleProductAddClick(product)}
+                              className={!isOutOfStock ? 'cursor-pointer' : ''}
+                            >
+                              <div className="line-clamp-1 text-sm font-bold text-stone-900">
+                                {product.name}
+                              </div>
+                              {hasToppings && (
+                                <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 mt-0.5">
+                                  ✨ Có {product.toppings!.length} topping tùy chọn
+                                </span>
+                              )}
+                              {product.description && (
+                                <p className="mt-0.5 line-clamp-1 text-xs text-stone-500">
+                                  {product.description}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between">
+                              {isOutOfStock ? (
+                                <span className="text-xs font-bold text-rose-600">Đã hết</span>
+                              ) : (
+                                <span className="text-sm font-extrabold text-amber-800">
+                                  {formatCurrency(product.price)}
+                                </span>
+                              )}
+
+                              <div>
+                                {isOutOfStock ? (
+                                  <button
+                                    disabled
+                                    className="px-3 py-1 bg-stone-100 text-stone-400 text-xs font-semibold rounded-xl cursor-not-allowed border border-stone-200"
+                                  >
+                                    Hết
+                                  </button>
+                                ) : hasToppings ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleProductAddClick(product)}
+                                    className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition active:scale-95 flex items-center space-x-1"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Tùy chọn</span>
+                                    {qty > 0 && (
+                                      <span className="ml-1 bg-white/20 px-1.5 py-0.2 rounded-full text-[10px]">
+                                        ({qty})
+                                      </span>
+                                    )}
+                                  </button>
+                                ) : qty > 0 ? (
+                                  <div className="flex items-center space-x-1.5 rounded-xl border border-amber-200/90 bg-amber-50/80 p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateQuantity(product.id, qty - 1)}
+                                      className="flex h-6 w-6 items-center justify-center rounded-lg bg-white text-amber-900 shadow-2xs hover:bg-stone-50 active:scale-95 transition"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                    <span className="text-xs font-bold text-amber-900 px-1.5">{qty}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateQuantity(product.id, qty + 1)}
+                                      className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-600 text-white shadow-2xs hover:bg-amber-700 active:scale-95 transition"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleProductAddClick(product)}
+                                    className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition active:scale-95 flex items-center space-x-1"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Thêm</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
             ))
           )}
         </div>
       </div>
+
+      {/* Footer */}
+      <Footer className="pb-28" />
 
       {/* 3. Sticky Bottom Bar (Thanh giỏ hàng ghim đáy) */}
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-[#ebdcd0] bg-[#fffdfa]/95 backdrop-blur p-3 shadow-lg">
@@ -706,7 +969,7 @@ export const TableLandingPage: React.FC = () => {
               <div>
                 <h3 className="font-black text-base text-stone-900">Yêu cầu gọi món</h3>
                 <p className="text-xs text-amber-800 font-bold mt-0.5">
-                  {landing.table.location_name} ({landing.table.zone})
+                  {tableDisplayName}
                 </p>
               </div>
               <button
@@ -892,7 +1155,7 @@ export const TableLandingPage: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Bàn:</span>
-                <span className="font-bold text-blue-600">{landing.table.location_name}</span>
+                <span className="font-bold text-amber-800">{tableDisplayName}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Tổng tiền:</span>
@@ -910,16 +1173,18 @@ export const TableLandingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  navigate(`/track/${lastCreatedOrder.order_code}`);
+                  navigate(`/track/${lastCreatedOrder.order_code}`, {
+                    state: { fromTableUrl: window.location.pathname, tableDisplayName },
+                  });
                 }}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition"
+                className="w-full py-2.5 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-800/20 transition"
               >
                 Xem tiến độ đơn này
               </button>
               <button
                 type="button"
                 onClick={() => setLastCreatedOrder(null)}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
+                className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition"
               >
                 Tiếp tục gọi món
               </button>
@@ -940,8 +1205,8 @@ export const TableLandingPage: React.FC = () => {
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="font-black text-base text-slate-900">Đơn đã gọi tại bàn</h3>
-                <p className="text-xs text-blue-600 font-bold mt-0.5">
-                  {landing.table.location_name}
+                <p className="text-xs text-amber-800 font-bold mt-0.5">
+                  {tableDisplayName}
                 </p>
               </div>
               <button
@@ -1021,10 +1286,24 @@ export const TableLandingPage: React.FC = () => {
                     </div>
 
                     <div className="pt-2 border-t border-stone-200 flex items-center justify-between">
-                      <span className="text-xs text-stone-500 font-medium">Tổng tiền:</span>
-                      <span className="text-sm font-black text-amber-800">
-                        {formatCurrency(ord.total_amount)}
-                      </span>
+                      <div>
+                        <span className="text-xs text-stone-500 font-medium">Tổng tiền: </span>
+                        <span className="text-sm font-black text-amber-800">
+                          {formatCurrency(ord.total_amount)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsOrdersHistoryOpen(false);
+                          navigate(`/track/${ord.order_code}`, {
+                            state: { fromTableUrl: window.location.pathname, tableDisplayName },
+                          });
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition"
+                      >
+                        Xem tiến độ
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1049,22 +1328,22 @@ export const TableLandingPage: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             onClick={() => setSelectedProductForTopping(null)}
-            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
+            className="fixed inset-0 bg-stone-950/60 backdrop-blur-xs animate-in fade-in duration-150"
           />
 
-          <div className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh] z-10 font-sans">
+          <div className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh] z-10 font-sans border border-[#ede4d8]">
             {/* Header */}
-            <div className="p-4 border-b border-slate-100 flex items-start justify-between bg-slate-50/70">
+            <div className="p-4 border-b border-[#ebdcd0] flex items-start justify-between bg-[#fffdfa]">
               <div className="min-w-0 pr-3">
-                <h3 className="text-base font-black text-slate-900 truncate">
+                <h3 className="text-base font-black text-stone-900 truncate">
                   {selectedProductForTopping.name}
                 </h3>
                 <div className="flex items-center space-x-2 mt-0.5">
-                  <span className="text-sm font-extrabold text-blue-600">
+                  <span className="text-sm font-extrabold text-amber-800">
                     {formatCurrency(selectedProductForTopping.price)}
                   </span>
                   {selectedProductForTopping.category_name && (
-                    <span className="text-[10px] text-slate-500 font-semibold px-2 py-0.5 bg-slate-200/60 rounded-full">
+                    <span className="text-[10px] text-amber-900 font-semibold px-2 py-0.5 bg-amber-100/70 rounded-full">
                       {selectedProductForTopping.category_name}
                     </span>
                   )}
@@ -1073,7 +1352,7 @@ export const TableLandingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedProductForTopping(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200/50 transition"
+                className="p-1.5 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1082,7 +1361,7 @@ export const TableLandingPage: React.FC = () => {
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {selectedProductForTopping.description && (
-                <p className="text-xs text-slate-500 italic bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/60">
+                <p className="text-xs text-stone-600 italic bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/70">
                   {selectedProductForTopping.description}
                 </p>
               )}
@@ -1090,10 +1369,10 @@ export const TableLandingPage: React.FC = () => {
               {/* Topping List */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-stone-800 uppercase tracking-wider">
                     Chọn Topping thêm
                   </span>
-                  <span className="text-[11px] text-slate-400 font-medium">
+                  <span className="text-[11px] text-stone-400 font-medium">
                     (Có thể chọn nhiều)
                   </span>
                 </div>
@@ -1106,8 +1385,8 @@ export const TableLandingPage: React.FC = () => {
                         key={idx}
                         className={`flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition-all ${
                           isChecked
-                            ? 'bg-blue-50/80 border-blue-500 shadow-xs'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                            ? 'bg-amber-50/90 border-amber-500 shadow-xs ring-1 ring-amber-500/20'
+                            : 'bg-white border-[#e8ded2] hover:bg-[#faf7f2]'
                         }`}
                       >
                         <div className="flex items-center space-x-3">
@@ -1115,17 +1394,17 @@ export const TableLandingPage: React.FC = () => {
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => toggleTopping(top)}
-                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 accent-blue-600"
+                            className="w-4 h-4 rounded text-amber-700 focus:ring-amber-500 accent-amber-600 cursor-pointer"
                           />
                           <span
                             className={`text-xs font-bold ${
-                              isChecked ? 'text-blue-950' : 'text-slate-700'
+                              isChecked ? 'text-amber-950' : 'text-stone-700'
                             }`}
                           >
                             {top.name}
                           </span>
                         </div>
-                        <span className="text-xs font-bold text-blue-600">
+                        <span className="text-xs font-bold text-amber-800">
                           +{formatCurrency(top.price)}
                         </span>
                       </label>
@@ -1135,8 +1414,8 @@ export const TableLandingPage: React.FC = () => {
               </div>
 
               {/* Ghi chú riêng cho món này */}
-              <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                <label className="text-xs font-bold text-slate-700 block">
+              <div className="space-y-1.5 pt-2 border-t border-stone-100">
+                <label className="text-xs font-bold text-stone-700 block">
                   Ghi chú riêng cho món này (tùy chọn)
                 </label>
                 <input
@@ -1144,28 +1423,28 @@ export const TableLandingPage: React.FC = () => {
                   placeholder="Ví dụ: ít ngọt, nhiều đá, đá riêng..."
                   value={itemNote}
                   onChange={(e) => setItemNote(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full bg-[#fcf9f5] border border-[#e8ded2] rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 focus:bg-white"
                 />
               </div>
 
               {/* Số lượng */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <span className="text-xs font-bold text-slate-700">Số lượng phần:</span>
-                <div className="flex items-center bg-slate-100 rounded-xl p-1 space-x-2">
+              <div className="flex items-center justify-between pt-2 border-t border-stone-100">
+                <span className="text-xs font-bold text-stone-700">Số lượng phần:</span>
+                <div className="flex items-center bg-amber-50/70 border border-amber-200/80 rounded-xl p-1 space-x-2">
                   <button
                     type="button"
                     onClick={() => setItemQuantity((prev) => Math.max(1, prev - 1))}
-                    className="w-7 h-7 rounded-lg bg-white text-slate-700 flex items-center justify-center shadow-xs font-bold active:scale-95"
+                    className="w-7 h-7 rounded-lg bg-white text-stone-700 flex items-center justify-center shadow-2xs font-bold active:scale-95 hover:bg-stone-50"
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </button>
-                  <span className="text-xs font-bold text-slate-900 min-w-[24px] text-center">
+                  <span className="text-xs font-bold text-amber-950 min-w-[24px] text-center">
                     {itemQuantity}
                   </span>
                   <button
                     type="button"
                     onClick={() => setItemQuantity((prev) => prev + 1)}
-                    className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs font-bold active:scale-95"
+                    className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-2xs font-bold active:scale-95 hover:bg-amber-700"
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
@@ -1174,11 +1453,11 @@ export const TableLandingPage: React.FC = () => {
             </div>
 
             {/* Footer Button */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50">
+            <div className="p-4 border-t border-[#ebdcd0] bg-[#fffdfa]">
               <button
                 type="button"
                 onClick={handleConfirmAddTopping}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-blue-500/20 transition-all flex items-center justify-between px-5 active:scale-98"
+                className="w-full py-3 bg-amber-700 hover:bg-amber-800 text-white rounded-2xl text-xs font-bold shadow-md shadow-amber-900/20 transition-all flex items-center justify-between px-5 active:scale-98"
               >
                 <span>Thêm vào đơn</span>
                 <span className="text-sm font-black">

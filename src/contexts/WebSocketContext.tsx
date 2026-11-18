@@ -59,10 +59,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const connect = useCallback(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
-    // Xác định protocol ws: hay wss:
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    let url = `${protocol}//${host}/ws`;
+    // Ưu tiên kết nối thẳng tới backend port (8089) để tránh phụ thuộc proxy Vite
+    let url = '';
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (apiUrl && typeof apiUrl === 'string' && apiUrl.startsWith('http')) {
+      url = apiUrl.replace(/^http/, 'ws') + '/ws';
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      url = `${protocol}//${window.location.host}/ws`;
+    }
 
     if (token) {
       url += `?token=Bearer%20${encodeURIComponent(token)}`;
@@ -83,9 +88,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setOnlineCount(payload.count as number);
           }
 
-          if (payload.action === 'NEW_ORDER' || payload.action === 'CALL_STAFF') {
-            playOrderNotificationSound();
-          }
+          // Không phát chuông ở giao diện khách hàng. Chuông báo đơn chỉ phát ở Admin POS.
 
           // Gửi tới tất cả subscriber đang đăng ký
           handlersRef.current.forEach((handler) => handler(payload));

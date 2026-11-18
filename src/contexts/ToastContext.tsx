@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -18,6 +18,17 @@ export interface AlertModalOptions {
   onConfirm?: () => void;
 }
 
+export interface ConfirmModalOptions {
+  title?: string;
+  message: string;
+  description?: string;
+  type?: 'danger' | 'warning' | 'info';
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void | Promise<void>;
+  onCancel?: () => void;
+}
+
 interface ToastContextType {
   showToast: (message: string, type?: ToastType, title?: string) => void;
   showError: (message: string, title?: string) => void;
@@ -25,6 +36,7 @@ interface ToastContextType {
   showWarning: (message: string, title?: string) => void;
   showAlertModal: (options: AlertModalOptions) => void;
   closeAlertModal: () => void;
+  showConfirmModal: (options: ConfirmModalOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -32,6 +44,8 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [alertModal, setAlertModal] = useState<AlertModalOptions | null>(null);
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalOptions | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -82,6 +96,30 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAlertModal(null);
   }, [alertModal]);
 
+  const showConfirmModal = useCallback((options: ConfirmModalOptions) => {
+    setConfirmModal(options);
+  }, []);
+
+  const handleConfirmAction = async () => {
+    if (!confirmModal) return;
+    try {
+      setConfirmLoading(true);
+      await confirmModal.onConfirm();
+      setConfirmModal(null);
+    } catch (err) {
+      console.error('Confirm modal action error:', err);
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  const handleCancelAction = () => {
+    if (confirmModal?.onCancel) {
+      confirmModal.onCancel();
+    }
+    setConfirmModal(null);
+  };
+
   return (
     <ToastContext.Provider
       value={{
@@ -91,6 +129,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         showWarning,
         showAlertModal,
         closeAlertModal,
+        showConfirmModal,
       }}
     >
       {children}
@@ -172,6 +211,75 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             >
               {alertModal.confirmText || 'Đã hiểu'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modern Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-stone-950/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            onClick={() => !confirmLoading && handleCancelAction()}
+          />
+          <div className="relative bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-stone-100 z-10 text-center space-y-4 animate-in zoom-in-95 duration-150">
+            <div
+              className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center shadow-xs ${
+                confirmModal.type === 'warning'
+                  ? 'bg-amber-100 text-amber-700'
+                  : confirmModal.type === 'info'
+                  ? 'bg-blue-100 text-blue-600'
+                  : 'bg-rose-100 text-rose-600'
+              }`}
+            >
+              {confirmModal.type === 'warning' ? (
+                <AlertTriangle className="w-7 h-7" />
+              ) : confirmModal.type === 'info' ? (
+                <Info className="w-7 h-7" />
+              ) : (
+                <AlertCircle className="w-7 h-7" />
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-black text-stone-900 tracking-tight">
+                {confirmModal.title || 'Xác nhận thao tác'}
+              </h3>
+              <p className="text-xs font-semibold text-stone-700 leading-relaxed break-words">
+                {confirmModal.message}
+              </p>
+              {confirmModal.description && (
+                <p className="text-[11px] text-stone-400 leading-normal break-words">
+                  {confirmModal.description}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={confirmLoading}
+                onClick={handleCancelAction}
+                className="flex-1 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs rounded-xl transition-all cursor-pointer disabled:opacity-50"
+              >
+                {confirmModal.cancelText || 'Hủy bỏ'}
+              </button>
+              <button
+                type="button"
+                disabled={confirmLoading}
+                onClick={handleConfirmAction}
+                className={`flex-1 py-2.5 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-[0.98] ${
+                  confirmModal.type === 'warning'
+                    ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25'
+                    : confirmModal.type === 'info'
+                    ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/25'
+                    : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25'
+                }`}
+              >
+                {confirmLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <span>{confirmModal.confirmText || 'Xác nhận'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

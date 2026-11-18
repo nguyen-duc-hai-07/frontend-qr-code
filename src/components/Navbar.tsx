@@ -10,7 +10,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenCart }) => {
-  const { isAuthenticated, user, isAdmin, logout } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const { totalCount, totalPrice } = useCart();
   const navigate = useNavigate();
 
@@ -57,22 +57,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCart }) => {
             <div className="flex items-center space-x-2 pl-2 border-l border-[#ebdcd0]">
               <Link
                 to="/my-orders"
-                className="text-xs font-semibold text-stone-600 hover:text-amber-800 px-2 py-1 rounded-md hover:bg-amber-50"
+                className="text-xs font-semibold text-stone-600 hover:text-amber-800 px-2.5 py-1.5 rounded-lg hover:bg-amber-50"
               >
                 Đơn của tôi
               </Link>
-              {isAdmin && (
-                <Link
-                  to="/admin/dashboard"
-                  className="text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200/90 hover:bg-amber-100"
-                >
-                  Trang Quản Trị
-                </Link>
-              )}
               <button
                 onClick={handleLogout}
                 title="Đăng xuất"
-                className="p-1.5 text-stone-400 hover:text-rose-500 rounded-full"
+                className="p-1.5 text-stone-400 hover:text-rose-500 rounded-full cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>

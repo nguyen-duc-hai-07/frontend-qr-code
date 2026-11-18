@@ -3,6 +3,7 @@ import { ResponseGeneral } from '@/types/api';
 import {
   Order,
   OrderCreateRequest,
+  OrderCreateItem,
   OrderStatusUpdateRequest,
   OrderStatus,
   OrderType,
@@ -59,6 +60,29 @@ export const orderApi = {
   ): Promise<ResponseGeneral<Order>> => {
     const res = await apiClient.delete<ResponseGeneral<Order>>(
       `/api/v1/orders/${orderId}/items/${itemId}`
+    );
+    return res.data;
+  },
+
+  exchangeOrderItemAdmin: async (
+    orderId: number,
+    itemId: number,
+    data: OrderCreateItem
+  ): Promise<ResponseGeneral<Order>> => {
+    const res = await apiClient.put<ResponseGeneral<Order>>(
+      `/api/v1/orders/${orderId}/items/${itemId}`,
+      data
+    );
+    return res.data;
+  },
+
+  addOrderItemAdmin: async (
+    orderId: number,
+    data: OrderCreateItem
+  ): Promise<ResponseGeneral<Order>> => {
+    const res = await apiClient.post<ResponseGeneral<Order>>(
+      `/api/v1/orders/${orderId}/items`,
+      data
     );
     return res.data;
   },
