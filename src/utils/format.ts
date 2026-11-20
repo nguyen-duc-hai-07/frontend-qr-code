@@ -37,9 +37,17 @@ export const formatTimeAgo = (dateStr?: string): string => {
 
 export const getImageUrl = (url?: string | null): string => {
   if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+  if (url.startsWith('blob:') || url.startsWith('data:')) {
     return url;
   }
   const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+  // Đảm bảo ảnh upload cục bộ luôn đi qua server API hiện tại
+  if (url.includes('/api/v1/files/view/')) {
+    const path = url.substring(url.indexOf('/api/v1/files/view/'));
+    return `${apiBase}${path}`;
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
   return `${apiBase}${url.startsWith('/') ? '' : '/'}${url}`;
 };

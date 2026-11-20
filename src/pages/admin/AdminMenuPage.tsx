@@ -15,12 +15,17 @@ import {
   AlertTriangle,
   Link2,
   Image as ImageIcon,
+  ZoomIn,
+  Eye,
+  Maximize2,
+  ExternalLink,
+  ImageOff,
 } from 'lucide-react';
 import { menuApi } from '@/api/menu.api';
 import { fileApi } from '@/api/file.api';
 import { Category, CategoryRequest } from '@/types/category';
 import { Product, ProductRequest } from '@/types/product';
-import { formatCurrency } from '@/utils/format';
+import { formatCurrency, getImageUrl } from '@/utils/format';
 import { Card, CardContent, Button, Badge, Input, Dialog } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 import { getErrorMessage } from '@/utils/error';
@@ -50,6 +55,13 @@ export const AdminMenuPage: React.FC = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imagePreviewError, setImagePreviewError] = useState(false);
   const [imageInputMode, setImageInputMode] = useState<'FILE' | 'URL'>('FILE');
+
+  // Modal xem chi tiết ảnh phóng to
+  const [previewImage, setPreviewImage] = useState<{
+    url: string;
+    title: string;
+    subtitle?: string;
+  } | null>(null);
 
   // Category Modal state
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
@@ -226,14 +238,34 @@ export const AdminMenuPage: React.FC = () => {
 
       if (editingProduct) {
         const res = await menuApi.updateProduct(editingProduct.id, payload);
-        setProducts((prev) => prev.map((p) => (p.id === editingProduct.id ? res.data : p)));
+        const updatedProduct: Product = {
+          ...editingProduct,
+          ...payload,
+          ...((res && res.data) || {}),
+        };
+        setProducts((prev) =>
+          prev.map((p) => (p.id === editingProduct.id ? updatedProduct : p))
+        );
         showSuccess('Cập nhật món ăn thành công!');
       } else {
         const res = await menuApi.createProduct(payload);
-        setProducts((prev) => [...prev, res.data]);
+        const newProduct: Product = {
+          ...payload,
+          is_available: payload.is_available ?? true,
+          ...((res && res.data) || {}),
+          id: res?.data?.id || Date.now(),
+        };
+        setProducts((prev) => [...prev, newProduct]);
         showSuccess('Thêm món ăn mới thành công!');
       }
       setIsProductModalOpen(false);
+
+      // Đồng thời đồng bộ dữ liệu mới nhất từ server
+      menuApi.getAllProductsAdmin().then((prodsRes) => {
+        if (prodsRes.data) {
+          setProducts(prodsRes.data);
+        }
+      });
     } catch (err: unknown) {
       showError(getErrorMessage(err, 'Lưu món ăn thất bại!'));
     } finally {
@@ -447,16 +479,33 @@ export const AdminMenuPage: React.FC = () => {
                     <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 relative flex items-center justify-center">
+                          <div
+                            onClick={() => {
+                              if (p.image_url) {
+                                setPreviewImage({
+                                  url: p.image_url,
+                                  title: p.name,
+                                  subtitle: `${p.category_name || 'Món ăn'} • ${formatCurrency(p.price)}`,
+                                });
+                              }
+                            }}
+                            className={`w-11 h-11 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 relative flex items-center justify-center group ${
+                              p.image_url ? 'cursor-pointer hover:ring-2 hover:ring-blue-500/50 hover:shadow-md transition-all' : ''
+                            }`}
+                            title={p.image_url ? 'Bấm để xem chi tiết ảnh' : 'Chưa có ảnh'}
+                          >
                             {p.image_url ? (
-                              <img
-                                src={p.image_url}
-                                alt={p.name}
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
-                                className="w-full h-full object-cover"
-                              />
+                              <>
+                                <img
+                                  key={`${p.id}-${p.image_url}`}
+                                  src={getImageUrl(p.image_url)}
+                                  alt={p.name}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                />
+                                <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <ZoomIn className="w-4 h-4 text-white drop-shadow" />
+                                </div>
+                              </>
                             ) : (
                               <span className="text-[10px] font-bold text-slate-400">QR</span>
                             )}
@@ -506,6 +555,23 @@ export const AdminMenuPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {p.image_url && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                setPreviewImage({
+                                  url: p.image_url!,
+                                  title: p.name,
+                                  subtitle: `${p.category_name || 'Món ăn'} • ${formatCurrency(p.price)}`,
+                                })
+                              }
+                              title="Xem chi tiết ảnh"
+                              className="hover:text-blue-600 hover:bg-blue-50"
+                            >
+                              <Eye className="w-4 h-4 text-slate-400 hover:text-blue-600" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -742,14 +808,34 @@ export const AdminMenuPage: React.FC = () => {
             {/* Khung hiển thị ảnh preview */}
             {prodForm.image_url && (
               <div className="mt-2.5 flex items-start gap-3 p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl">
-                <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-white relative shrink-0 flex items-center justify-center shadow-xs">
+                <div
+                  onClick={() => {
+                    if (prodForm.image_url && !imagePreviewError) {
+                      setPreviewImage({
+                        url: prodForm.image_url,
+                        title: prodForm.name || 'Ảnh món ăn',
+                        subtitle: 'Xem trước ảnh sản phẩm',
+                      });
+                    }
+                  }}
+                  className={`w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-white relative shrink-0 flex items-center justify-center shadow-xs group ${
+                    !imagePreviewError ? 'cursor-pointer hover:ring-2 hover:ring-blue-500/40' : ''
+                  }`}
+                  title={!imagePreviewError ? 'Bấm để xem ảnh chi tiết' : 'Lỗi ảnh'}
+                >
                   {!imagePreviewError ? (
-                    <img
-                      src={prodForm.image_url}
-                      alt="Preview món ăn"
-                      onError={() => setImagePreviewError(true)}
-                      className="w-full h-full object-cover"
-                    />
+                    <>
+                      <img
+                        key={prodForm.image_url}
+                        src={getImageUrl(prodForm.image_url)}
+                        alt="Preview món ăn"
+                        onError={() => setImagePreviewError(true)}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <ZoomIn className="w-5 h-5 text-white drop-shadow" />
+                      </div>
+                    </>
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-rose-500 p-1 text-center bg-rose-50">
                       <AlertTriangle className="w-5 h-5 shrink-0" />
@@ -757,12 +843,13 @@ export const AdminMenuPage: React.FC = () => {
                   )}
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setImagePreviewError(false);
                       setProdForm({ ...prodForm, image_url: '' });
                     }}
                     title="Xóa ảnh này"
-                    className="absolute top-1 right-1 bg-black/60 hover:bg-rose-600 text-white rounded-full p-0.5 transition shadow-sm cursor-pointer"
+                    className="absolute top-1 right-1 bg-black/60 hover:bg-rose-600 text-white rounded-full p-0.5 transition shadow-sm cursor-pointer z-10"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -778,6 +865,19 @@ export const AdminMenuPage: React.FC = () => {
                       <p className="text-[11px] text-slate-500 truncate mt-1" title={prodForm.image_url}>
                         {prodForm.image_url.startsWith('blob:') ? 'Ảnh xem trước từ máy' : prodForm.image_url}
                       </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewImage({
+                            url: prodForm.image_url!,
+                            title: prodForm.name || 'Ảnh món ăn',
+                            subtitle: 'Xem trước ảnh sản phẩm',
+                          })
+                        }
+                        className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold inline-flex items-center gap-1 mt-1.5 cursor-pointer hover:underline"
+                      >
+                        <Maximize2 className="w-3 h-3" /> Xem ảnh chi tiết
+                      </button>
                     </>
                   ) : (
                     <>
@@ -949,6 +1049,74 @@ export const AdminMenuPage: React.FC = () => {
           </div>
         </form>
       </Dialog>
+
+      {/* Modal: Xem chi tiết ảnh phóng to */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header modal */}
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="min-w-0 pr-3">
+                <h3 className="font-bold text-slate-900 text-sm truncate">{previewImage.title}</h3>
+                {previewImage.subtitle && (
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">{previewImage.subtitle}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="w-8 h-8 rounded-full bg-slate-200/70 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Khung ảnh chi tiết */}
+            <div className="p-4 bg-slate-950 flex items-center justify-center min-h-[300px] max-h-[65vh] overflow-hidden">
+              <img
+                src={getImageUrl(previewImage.url)}
+                alt={previewImage.title}
+                className="max-h-[60vh] w-auto max-w-full object-contain rounded-lg shadow-lg"
+              />
+            </div>
+
+            {/* Footer modal */}
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs gap-3">
+              <span
+                className="text-slate-400 font-mono text-[11px] truncate flex-1"
+                title={previewImage.url}
+              >
+                {previewImage.url.startsWith('data:') ? 'Ảnh Base64 trực tiếp' : previewImage.url}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {!previewImage.url.startsWith('data:') && (
+                  <a
+                    href={getImageUrl(previewImage.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 font-medium inline-flex items-center gap-1 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Mở link
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="px-3.5 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
