@@ -88,7 +88,7 @@ apiClient.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem('access_token');
         localStorage.removeItem('user_info');
-        window.location.href = '/login';
+        window.location.href = window.location.pathname.startsWith('/admin') ? '/admin/login' : '/login';
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

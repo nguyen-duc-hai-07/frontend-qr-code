@@ -86,6 +86,14 @@ export const Footer: React.FC<FooterProps> = ({ className = '' }) => {
                   Đăng nhập
                 </Link>
               </li>
+              <li>
+                <Link
+                  to="/admin/login"
+                  className="text-stone-400 hover:text-stone-600 hover:underline transition-colors block py-0.5 text-[11px]"
+                >
+                  Dành cho quản lý (Admin)
+                </Link>
+              </li>
             </ul>
           </div>
         </div>

@@ -24,8 +24,12 @@ export const LoginPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      await login({ username, password });
-      navigate('/');
+      const loggedUser = await login({ username, password });
+      if (loggedUser.role === 'ADMIN') {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/');
+      }
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Tên đăng nhập hoặc mật khẩu không chính xác!'));
     } finally {
@@ -45,7 +49,7 @@ export const LoginPage: React.FC = () => {
           Hoàng An Coffee & Billiard
         </h2>
         <p className="mt-1 text-xs font-bold uppercase tracking-wider text-amber-800">
-          Đăng Nhập Khách Hàng Gọi Món & Đặt Ship
+          Đăng Nhập Tài Khoản
         </p>
       </div>
 
@@ -114,7 +118,7 @@ export const LoginPage: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <span>Đăng nhập gọi món</span>
+                  <span>Đăng nhập</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

@@ -204,7 +204,7 @@ export const TableLandingPage: React.FC = () => {
     return unsubscribe;
   }, [subscribe, landing, items, removeItem]);
 
-  // Load orders that have been placed for this table
+  // Load orders that have been placed for this table (chỉ tải các đơn thuộc phiên/lượt ngồi hiện tại)
   const loadTableOrders = async (tableId: number) => {
     try {
       setLoadingTableOrders(true);
@@ -223,7 +223,31 @@ export const TableLandingPage: React.FC = () => {
       );
       const results = await Promise.all(orderPromises);
       const validOrders = results.filter((o): o is Order => o !== null);
-      setTableOrders(validOrders);
+
+      // Lọc các đơn thuộc lượt ngồi hiện tại:
+      // 1. Đơn đang xử lý: PENDING hoặc PREPARING
+      // 2. Đơn đã hoàn thành hoặc đã hủy nhưng đặt trong vòng 3 tiếng hôm nay
+      const now = Date.now();
+      const todayStr = new Date().toDateString();
+
+      const activeOrders = validOrders.filter((ord) => {
+        if (ord.status === 'PENDING' || ord.status === 'PREPARING') {
+          return true;
+        }
+        if (ord.created_at) {
+          const orderDate = new Date(ord.created_at);
+          const isToday = orderDate.toDateString() === todayStr;
+          const diffHours = (now - orderDate.getTime()) / (1000 * 60 * 60);
+          return isToday && diffHours < 3;
+        }
+        return false;
+      });
+
+      // Tự động dọn dẹp các mã đơn cũ từ các ngày trước khỏi localStorage
+      const cleanCodes = activeOrders.map((o) => o.order_code);
+      localStorage.setItem(storageKey, JSON.stringify(cleanCodes));
+
+      setTableOrders(activeOrders);
     } catch {
       // ignore
     } finally {
@@ -1206,16 +1230,46 @@ export const TableLandingPage: React.FC = () => {
               <div>
                 <h3 className="font-black text-base text-slate-900">Đơn đã gọi tại bàn</h3>
                 <p className="text-xs text-amber-800 font-bold mt-0.5">
-                  {tableDisplayName}
+                  {tableDisplayName} • Lượt ngồi hiện tại
                 </p>
               </div>
-              <button
-                onClick={() => setIsOrdersHistoryOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {tableOrders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (landing?.table?.id) {
+                        localStorage.removeItem(`hoangan_orders_table_${landing.table.id}`);
+                        setTableOrders([]);
+                      }
+                    }}
+                    className="text-[11px] font-semibold text-stone-400 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+                    title="Xóa danh sách đơn trên máy này để bắt đầu lượt mới"
+                  >
+                    Dọn đơn cũ
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsOrdersHistoryOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+
+            {tableOrders.length > 0 && (
+              <div className="px-4 py-2.5 bg-amber-50/70 border-b border-amber-100/80 flex items-center justify-between text-xs">
+                <span className="text-stone-600 font-medium">
+                  Tổng {tableOrders.length} đơn lượt này:
+                </span>
+                <span className="font-black text-amber-800 text-sm">
+                  {formatCurrency(
+                    tableOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0)
+                  )}
+                </span>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {loadingTableOrders ? (

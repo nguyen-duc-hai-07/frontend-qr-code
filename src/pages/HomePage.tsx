@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import {
   Utensils,
   Search,
@@ -25,12 +25,19 @@ import { orderApi } from '@/api/order.api';
 import { Category } from '@/types/category';
 import { Product, ProductTopping } from '@/types/product';
 import { useCart } from '@/contexts/CartContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useToast } from '@/contexts/ToastContext';
 import { formatCurrency } from '@/utils/format';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const { isAuthenticated, user, isAdmin } = useAuth();
+
+  // Quản trị viên (ADMIN) tuyệt đối không vào trang bán hàng của khách
+  if (isAuthenticated && (isAdmin || user?.role === 'ADMIN')) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,6 +108,18 @@ export const HomePage: React.FC = () => {
   const [orderNote, setOrderNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Auto pre-fill user info if logged in
+  useEffect(() => {
+    if (user) {
+      if (!customerName) {
+        setCustomerName(user.full_name || user.username || '');
+      }
+      if (!customerPhone && user.phone_number) {
+        setCustomerPhone(user.phone_number);
+      }
+    }
+  }, [user]);
+
   const { items, addItem, updateQuantity, removeItem, clearCart, totalCount, totalPrice, toOrderItems } =
     useCart();
   const { subscribe } = useWebSocket();
@@ -161,10 +180,21 @@ export const HomePage: React.FC = () => {
   };
 
   const handleCheckoutDelivery = async () => {
-    if (!customerPhone.trim() || !deliveryAddress.trim()) {
+    if (!customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()) {
       showAlertModal({
         title: 'Thiếu thông tin nhận hàng',
-        message: 'Vui lòng nhập số điện thoại và địa chỉ nhận hàng!',
+        message: 'Đơn đặt ship yêu cầu đầy đủ: Tên người nhận, Số điện thoại và Địa chỉ giao hàng chi tiết!',
+        type: 'warning',
+        confirmText: 'Đã hiểu',
+      });
+      return;
+    }
+
+    const cleanPhone = customerPhone.replace(/\s+/g, '');
+    if (!/^(0|\+84)[0-9]{9,10}$/.test(cleanPhone)) {
+      showAlertModal({
+        title: 'Số điện thoại không hợp lệ',
+        message: 'Vui lòng nhập số điện thoại hợp lệ (10 số, bắt đầu bằng 0 hoặc +84) để nhân viên giao hàng liên hệ!',
         type: 'warning',
         confirmText: 'Đã hiểu',
       });
@@ -800,18 +830,25 @@ export const HomePage: React.FC = () => {
 
                   {/* Delivery Inputs */}
                   <div className="pt-2 space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400">
-                      Thông tin nhận hàng
-                    </h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                        <span>🛵 Thông tin nhận hàng (Đặt ship)</span>
+                      </h4>
+                      <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full">
+                        Giao tận nơi
+                      </span>
+                    </div>
+
                     <div>
                       <label className="text-xs font-semibold text-stone-700 block mb-1">
-                        Họ và tên
+                        Họ và tên người nhận <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <User className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
                           type="text"
-                          placeholder="Họ tên người nhận"
+                          required
+                          placeholder="Nhập họ tên người nhận"
                           value={customerName}
                           onChange={(e) => setCustomerName(e.target.value)}
                           className="w-full text-xs pl-9 pr-3 py-2 bg-[#fcf9f5] border border-[#e8ded2] rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"

@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import { PageResponse, ResponseGeneral } from '@/types/api';
-import { User, UserRole } from '@/types/auth';
+import { User, UserRole, ChangePasswordRequest } from '@/types/auth';
 
 export interface UserCreatePayload {
   username: string;
@@ -48,6 +48,22 @@ export const userApi = {
 
   deleteUser: async (id: number): Promise<ResponseGeneral<void>> => {
     const res = await apiClient.delete<ResponseGeneral<void>>(`/api/v1/users/${id}`);
+    return res.data;
+  },
+
+  // APIs cho tài khoản đang đăng nhập
+  getMyProfile: async (): Promise<ResponseGeneral<User>> => {
+    const res = await apiClient.get<ResponseGeneral<User>>('/api/v1/users/me');
+    return res.data;
+  },
+
+  changePassword: async (data: ChangePasswordRequest): Promise<ResponseGeneral<void>> => {
+    const res = await apiClient.put<ResponseGeneral<void>>('/api/v1/users/change-password', data);
+    return res.data;
+  },
+
+  updateMyProfile: async (data: Partial<UserUpdatePayload>): Promise<ResponseGeneral<User>> => {
+    const res = await apiClient.put<ResponseGeneral<User>>('/api/v1/users/me', data);
     return res.data;
   },
 };

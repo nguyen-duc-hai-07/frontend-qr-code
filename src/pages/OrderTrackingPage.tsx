@@ -10,6 +10,10 @@ import {
   AlertCircle,
   Receipt,
   MapPin,
+  Phone,
+  User,
+  FileText,
+  Bike,
 } from 'lucide-react';
 import { orderApi } from '@/api/order.api';
 import { Order } from '@/types/order';
@@ -28,21 +32,32 @@ export const OrderTrackingPage: React.FC = () => {
 
   const { subscribe } = useWebSocket();
 
-  // Determine back URL: Prioritize table order origin so guest never gets dumped onto homepage
+  // Determine back URL
   const getBackUrl = () => {
-    // 1. If passed via React Router navigation state
+    // 1. If passed via React Router navigation state (e.g. from /my-orders)
+    if (location.state && (location.state as { from?: string }).from) {
+      return (location.state as { from: string }).from;
+    }
     if (location.state && (location.state as { fromTableUrl?: string }).fromTableUrl) {
       return (location.state as { fromTableUrl: string }).fromTableUrl;
     }
-    // 2. If saved in localStorage from TableLandingPage
-    const savedTablePath = localStorage.getItem('hoangan_last_table_path');
-    if (savedTablePath) {
-      return savedTablePath;
+
+    // 2. Nếu là đơn đặt giao hàng tận nơi (DELIVERY) -> luôn quay về trang chủ đặt giao hàng
+    if (order?.order_type === 'DELIVERY') {
+      return '/';
     }
-    // 3. If order has table_id
-    if (order && order.order_type === 'AT_TABLE' && order.table_id) {
-      return `/table/${order.table_id}`;
+
+    // 3. Nếu là đơn tại bàn (AT_TABLE):
+    if (order && order.order_type === 'AT_TABLE') {
+      const savedTablePath = localStorage.getItem('hoangan_last_table_path');
+      if (savedTablePath) {
+        return savedTablePath;
+      }
+      if (order.table_id) {
+        return `/table/${order.table_id}`;
+      }
     }
+
     // 4. Default fallback to home
     return '/';
   };
@@ -106,7 +121,7 @@ export const OrderTrackingPage: React.FC = () => {
           onClick={handleGoBack}
           className="px-5 py-2.5 bg-amber-700 text-white rounded-xl text-xs font-bold hover:bg-amber-800 shadow-xs transition"
         >
-          Quay lại thực đơn bàn
+          Quay lại thực đơn
         </button>
       </div>
     );
@@ -149,6 +164,8 @@ export const OrderTrackingPage: React.FC = () => {
     }
   };
 
+  const isDelivery = order.order_type === 'DELIVERY';
+
   return (
     <div className="min-h-screen bg-[#faf7f2] pb-16 font-sans">
       {/* Header */}
@@ -169,6 +186,11 @@ export const OrderTrackingPage: React.FC = () => {
               <span className="text-[11px] font-black px-2.5 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200">
                 {order.table_name}
               </span>
+            ) : isDelivery ? (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-200 inline-flex items-center gap-1">
+                <Bike className="w-3 h-3 text-amber-800" />
+                <span>Đặt Ship</span>
+              </span>
             ) : (
               <div className="w-8" />
             )}
@@ -181,7 +203,7 @@ export const OrderTrackingPage: React.FC = () => {
         {getStatusBadge()}
 
         {/* Order Info Card */}
-        <div className="bg-white rounded-2xl p-4 border border-[#ede4d8] shadow-2xs space-y-3">
+        <div className="bg-white rounded-2xl p-4 border border-[#ede4d8] shadow-2xs space-y-3.5">
           <div className="flex items-center justify-between pb-3 border-b border-stone-100">
             <div>
               <span className="text-xs text-stone-400 font-medium">Mã đơn hàng</span>
@@ -190,31 +212,87 @@ export const OrderTrackingPage: React.FC = () => {
               </p>
             </div>
             <div className="text-right">
-              <span className="text-xs text-stone-400 font-medium">Thời gian</span>
+              <span className="text-xs text-stone-400 font-medium">Thời gian đặt</span>
               <p className="text-xs text-stone-600 font-semibold">{formatDateTime(order.created_at)}</p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 text-xs text-stone-600">
-            {order.order_type === 'AT_TABLE' ? (
-              <>
+          {/* KHỐI THÔNG TIN GIAO NHẬN HÀNG (ĐẶT SHIP) HOẶC ĂN TẠI BÀN */}
+          {isDelivery ? (
+            <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200/90 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between pb-1.5 border-b border-amber-200/60">
+                <span className="font-bold text-amber-900 inline-flex items-center gap-1.5 text-xs bg-amber-100/90 px-2 py-0.5 rounded-md">
+                  <Bike className="w-3.5 h-3.5 text-amber-800" />
+                  <span>ĐẶT GIAO HÀNG TẬN NƠI (SHIP)</span>
+                </span>
+                {order.customer_phone && (
+                  <a
+                    href={`tel:${order.customer_phone}`}
+                    className="inline-flex items-center gap-1 font-bold text-amber-800 hover:text-amber-900 hover:underline px-2 py-1 bg-white rounded-lg border border-amber-200 shadow-2xs"
+                    title="Gọi cho người nhận"
+                  >
+                    <Phone className="w-3 h-3 text-amber-700" />
+                    <span>{order.customer_phone}</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="space-y-2 text-stone-700">
+                <div className="flex items-start gap-2">
+                  <User className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-stone-400">Tên người nhận: </span>
+                    <strong className="text-stone-900 text-sm">{order.customer_name || 'Khách đặt ship'}</strong>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2">
+                  <Phone className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-stone-400">Số điện thoại: </span>
+                    <strong className="text-stone-900 text-sm">{order.customer_phone || 'Chưa cung cấp'}</strong>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-stone-400">Địa chỉ giao hàng: </span>
+                    <strong className="text-stone-900 text-sm block">{order.delivery_address || 'Địa chỉ giao hàng'}</strong>
+                  </div>
+                </div>
+
+                {order.note ? (
+                  <div className="flex items-start gap-2 bg-white/80 p-2.5 rounded-xl border border-amber-200/70">
+                    <FileText className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="text-stone-400">Ghi chú đơn hàng: </span>
+                      <p className="text-stone-800 italic font-medium mt-0.5">&quot;{order.note}&quot;</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-stone-400 italic text-[11px] pt-0.5">
+                    <FileText className="w-3 h-3 text-stone-300 shrink-0" />
+                    <span>Không có ghi chú thêm</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1.5">
+              <div className="flex items-center space-x-2 text-xs text-stone-600 font-semibold">
                 <Utensils className="w-4 h-4 text-amber-700" />
-                <span className="font-semibold text-stone-800">
+                <span className="text-stone-800">
                   {order.table_name || 'Ăn tại bàn'}{order.zone ? ` - ${order.zone}` : ''}
                 </span>
-              </>
-            ) : (
-              <>
-                <MapPin className="w-4 h-4 text-amber-700" />
-                <span className="font-medium truncate">{order.delivery_address || 'Giao hàng tận nơi'}</span>
-              </>
-            )}
-          </div>
-
-          {order.note && (
-            <p className="text-xs bg-[#fcf9f5] border border-[#e8ded2] p-2.5 rounded-xl text-stone-600 italic">
-              &quot;{order.note}&quot;
-            </p>
+                {order.customer_name && <span className="text-stone-400">({order.customer_name})</span>}
+              </div>
+              {order.note && (
+                <p className="text-xs bg-white border border-stone-200 p-2 rounded-lg text-stone-600 italic">
+                  &quot;{order.note}&quot;
+                </p>
+              )}
+            </div>
           )}
         </div>
 
@@ -264,18 +342,24 @@ export const OrderTrackingPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Nút quay lại bàn gọi món tiếp */}
+        {/* Nút quay lại bàn hoặc xem thực đơn */}
         <div className="pt-2">
           <button
             type="button"
-            onClick={handleGoBack}
+            onClick={() => {
+              if (order.order_type === 'DELIVERY') {
+                navigate('/');
+              } else {
+                handleGoBack();
+              }
+            }}
             className="w-full py-3.5 bg-amber-700 hover:bg-amber-800 text-white rounded-2xl text-sm font-bold shadow-md shadow-amber-900/15 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
           >
             <Utensils className="w-4 h-4" />
             <span>
               {order.order_type === 'AT_TABLE'
                 ? `Quay lại ${order.table_name || 'bàn'} để tiếp tục gọi món`
-                : 'Tiếp tục xem thực đơn'}
+                : 'Tiếp tục xem thực đơn & Đặt món'}
             </span>
           </button>
         </div>

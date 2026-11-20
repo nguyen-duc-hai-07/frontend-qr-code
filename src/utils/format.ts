@@ -34,3 +34,12 @@ export const formatTimeAgo = (dateStr?: string): string => {
   if (diffHour < 24) return `${diffHour} giờ trước`;
   return formatDateTime(dateStr);
 };
+
+export const getImageUrl = (url?: string | null): string => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+  return `${apiBase}${url.startsWith('/') ? '' : '/'}${url}`;
+};

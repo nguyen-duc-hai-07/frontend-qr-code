@@ -28,3 +28,13 @@ export interface RegisterRequest {
   phone_number?: string;
   password: string;
 }
+
+export interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
+
+export interface UserProfileUpdateRequest {
+  full_name?: string;
+  phone_number?: string;
+}
