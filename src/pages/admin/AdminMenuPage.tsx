@@ -249,11 +249,12 @@ export const AdminMenuPage: React.FC = () => {
         showSuccess('Cập nhật món ăn thành công!');
       } else {
         const res = await menuApi.createProduct(payload);
+        const resData = res?.data ?? {};
         const newProduct: Product = {
           ...payload,
-          is_available: payload.is_available ?? true,
-          ...((res && res.data) || {}),
-          id: res?.data?.id || Date.now(),
+          ...resData,
+          is_available: resData.is_available ?? payload.is_available ?? true,
+          id: resData.id || Date.now(),
         };
         setProducts((prev) => [...prev, newProduct]);
         showSuccess('Thêm món ăn mới thành công!');
