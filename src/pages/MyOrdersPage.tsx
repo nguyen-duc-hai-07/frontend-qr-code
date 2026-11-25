@@ -12,6 +12,7 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  ChevronLeft,
   ChevronRight,
   Loader2,
   AlertCircle,
@@ -83,6 +84,16 @@ export const MyOrdersPage: React.FC = () => {
       <Navbar />
 
       <main className="max-w-3xl mx-auto px-4 py-8 flex-1 w-full space-y-4">
+        <div>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-stone-600 hover:text-amber-800 bg-white hover:bg-amber-50/80 px-3 py-1.5 rounded-xl border border-[#ede4d8] hover:border-amber-300 shadow-2xs transition-all active:scale-95"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Quay lại thực đơn</span>
+          </Link>
+        </div>
+
         {/* Tiêu đề trang */}
         <div className="flex items-center justify-between pb-3 border-b border-[#ede4d8]">
           <div>

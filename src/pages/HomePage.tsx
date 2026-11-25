@@ -839,6 +839,10 @@ export const HomePage: React.FC = () => {
                       </span>
                     </div>
 
+                    <div className="rounded-xl bg-amber-50/90 border border-amber-200/80 px-3 py-2 text-[11px] text-amber-900 leading-relaxed">
+                      ⏰ <strong>Lưu ý đặt ship:</strong> Quán nhận giao hàng từ <strong>9:00 sáng</strong> hằng ngày trong khu vực <strong>quanh Kinh Môn</strong>.
+                    </div>
+
                     <div>
                       <label className="text-xs font-semibold text-stone-700 block mb-1">
                         Họ và tên người nhận <span className="text-rose-500">*</span>
@@ -880,7 +884,7 @@ export const HomePage: React.FC = () => {
                         <MapPin className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
                         <textarea
                           rows={2}
-                          placeholder="Số nhà, tên đường, phường/xã, quận/huyện..."
+                          placeholder="Số nhà, tên đường, khu/xóm, phường/xã (quanh Kinh Môn)..."
                           value={deliveryAddress}
                           onChange={(e) => setDeliveryAddress(e.target.value)}
                           className="w-full text-xs pl-9 pr-3 py-2 bg-[#fcf9f5] border border-[#e8ded2] rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"

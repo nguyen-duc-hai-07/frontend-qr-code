@@ -21,39 +21,73 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const socketRef = useRef<WebSocket | null>(null);
   const handlersRef = useRef<Set<MessageHandler>>(new Set());
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const playOrderNotificationSound = useCallback(() => {
     try {
-      // Dùng Web Audio API tạo tiếng chuông notification mượt mà không cần file mp3 ngoài
-      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      
-      const now = audioCtx.currentTime;
-      // Ting 1: High note
-      const osc1 = audioCtx.createOscillator();
-      const gain1 = audioCtx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(587.33, now); // D5
-      gain1.gain.setValueAtTime(0.3, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-      osc1.connect(gain1);
-      gain1.connect(audioCtx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.5);
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
 
-      // Ting 2: Higher note
-      const osc2 = audioCtx.createOscillator();
-      const gain2 = audioCtx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(880, now + 0.15); // A5
-      gain2.gain.setValueAtTime(0.4, now + 0.15);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-      osc2.connect(gain2);
-      gain2.connect(audioCtx.destination);
-      osc2.start(now + 0.15);
-      osc2.stop(now + 0.8);
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const audioCtx = audioCtxRef.current;
+
+      const triggerTone = () => {
+        const now = audioCtx.currentTime;
+        // Ting 1: High note
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(587.33, now); // D5
+        gain1.gain.setValueAtTime(0.3, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.5);
+
+        // Ting 2: Higher note
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(880, now + 0.15); // A5
+        gain2.gain.setValueAtTime(0.4, now + 0.15);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.15);
+        osc2.stop(now + 0.8);
+      };
+
+      if (audioCtx.state === 'suspended') {
+        void audioCtx.resume().then(triggerTone);
+      } else {
+        triggerTone();
+      }
     } catch {
-      // Audio might be blocked if user has not interacted with the page yet
+      // Bỏ qua nếu trình duyệt chặn phát âm thanh
     }
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        if (audioCtxRef.current?.state === 'suspended') {
+          void audioCtxRef.current.resume();
+        }
+      } catch {
+        // Bỏ qua lỗi resume
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
   }, []);
 
   const connect = useCallback(() => {
